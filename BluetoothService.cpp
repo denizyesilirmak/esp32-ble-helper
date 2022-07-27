@@ -1,7 +1,5 @@
 #include "BluetoothService.h"
 
-
-
 //Battery level service
 #define BATTERY_SERVICE_UUID "0000180f-0000-1000-8000-00805f9b34fb"
 BLECharacteristic BatteryLevelCharacteristic(BLEUUID((uint16_t)0x2A19), BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
@@ -30,15 +28,35 @@ BLEDescriptor SensorServiceRXDescriptor(BLEUUID((uint16_t)0x2901));
 
 Preferences preferences;
 
+void (*_onDeviceConnectionCallback)(String status);
+void (*_onMessageFromClientCallback)(String message);
 
-class MyServerCallbacks: public BLEServerCallbacks {
+class ServerCallbacks: public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) {
-      Serial.println("connected");
+      //Serial.println("connected");
+      _onDeviceConnectionCallback("connected");
     };
     void onDisconnect(BLEServer* pServer) {
-      Serial.println("disconnected");
+      //Serial.println("disconnected");
+      _onDeviceConnectionCallback("disconnected");
     }
 };
+
+class CharacteristicCallbacks: public BLECharacteristicCallbacks {
+    void onWrite(BLECharacteristic *pCharacteristic) {
+      std::string rxValue = pCharacteristic->getValue();
+      if (rxValue.length() > 0) {
+        //  Serial.print("Received Value: ");
+        String received = "";
+        for (int i = 0; i < rxValue.length(); i++) {
+          received += rxValue[i];
+        }
+        //Serial.println(received);
+        _onMessageFromClientCallback(received);
+      }
+    }
+};
+
 
 
 BluetoothService::BluetoothService(
@@ -77,7 +95,6 @@ void BluetoothService::init(
   BluetoothService::CountryCode = CountryCode;
   BluetoothService::HardwareRevision = HardwareRevision;
   BluetoothService::FirmwareRevision = FirmwareRevision;
-
 }
 
 void BluetoothService::setup() {
@@ -85,7 +102,7 @@ void BluetoothService::setup() {
   Serial.println("BluetoothService::setup()");
   BLEDevice::init(BluetoothService::deviceName.c_str());
   BLEServer *pServer = BLEDevice::createServer();
-  pServer->setCallbacks(new MyServerCallbacks());
+  pServer->setCallbacks(new ServerCallbacks());
 
   BLEService *batteryService = pServer->createService(BATTERY_SERVICE_UUID);
   batteryService->addCharacteristic(&BatteryLevelCharacteristic);
@@ -113,7 +130,7 @@ void BluetoothService::setup() {
   preferences.begin("store", false);
   unsigned long counter = preferences.getULong("counter", 0);
   preferences.end();
-  String counterStr = (String)(counter/2.000);
+  String counterStr = (String)(counter / 2.000);
   UsageCounterCharacteristic.setValue(counterStr.c_str());
 
   deviceInfoService->addCharacteristic(&SerialNumberCharacteristic);
@@ -131,6 +148,7 @@ void BluetoothService::setup() {
 
   BLEService *sensorService = pServer->createService(SENSOR_UUID);
   sensorService->addCharacteristic(&SensorTXCharacteristic);
+  SensorTXCharacteristic.setCallbacks(new CharacteristicCallbacks());
   SensorServiceTXDescriptor.setValue("mobile-to-esp");
   SensorTXCharacteristic.addDescriptor(&SensorServiceTXDescriptor);
 
@@ -200,12 +218,26 @@ void BluetoothService::updateUsageCounter() {
 
     counter++;
 
-
     preferences.putULong("counter", counter);
     preferences.end();
-    String counterStr = (String)(counter/2.000);
+    String counterStr = (String)(counter / 2.000);
 
     UsageCounterCharacteristic.setValue(counterStr.c_str());
-
   }
 }
+
+void BluetoothService::onDeviceConnectionChange(void (*onDeviceConnectionCallback)(String status)) {
+  _onDeviceConnectionCallback = onDeviceConnectionCallback;
+}
+
+void BluetoothService::onMessageFromClient(void (*onMessageFromClientCallback)(String message)) {
+  _onMessageFromClientCallback = onMessageFromClientCallback;
+}
+
+
+
+
+
+
+
+

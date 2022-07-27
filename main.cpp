@@ -1,22 +1,38 @@
 #include "BluetoothService.h"
 
 BluetoothService BS(
-  "CompanyName DeviceName",
-  "CompanyName",
-  "DeviceName",
-  "DeviceCode",
-  "USA",
-  "1.0.0",
-  "1.0.0"
+  "Brand DeviceName", //Brand DeviceName
+  "CompanyName", //Company Name
+  "DeviceName", //Device Name
+  "DeviceCode", //Device Code
+  "USA", //Region Code
+  "1.0.0", //Hardware Revision
+  "1.0.0" //Firmware Revision
 );
 
 void setup() {
   Serial.begin(115200);
   //Allows the installation of the Ble server.
   BS.setup();
+  
   //Sets how often the battery level is sent(ms). Low values can cause unnecessary resource consumption.
   BS.setBatteryLevelDebounceTime(5000);
 
+  //Callback function that returns the client's connection status.
+  BS.onDeviceConnectionChange(handleConnectionEvent);
+
+  //Callback function that returns messages from the client.
+  BS.onMessageFromClient(handleMessageEvent);
+}
+
+void handleConnectionEvent(String status)
+{
+  Serial.println("Client conneciton status: " + status);
+}
+
+void handleMessageEvent(String message)
+{
+  Serial.println("Message from client: " + message);
 }
 
 void loop() {
