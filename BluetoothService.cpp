@@ -25,12 +25,17 @@ BLEDescriptor SensorServiceTXDescriptor(BLEUUID((uint16_t)0x2901));
 BLECharacteristic SensorRXCharacteristic("b142e8e0-0cc9-11ed-861d-0242ac120002", BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
 BLEDescriptor SensorServiceRXDescriptor(BLEUUID((uint16_t)0x2901));
 
+BLECharacteristic ButtonCharacteristic("b142e8e1-0cc9-11ed-861d-0242ac120002", BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
+BLEDescriptor ButtonDescriptor(BLEUUID((uint16_t)0x2901));
 
 Preferences preferences;
 
 void (*_onDeviceConnectionCallback)(String status);
 void (*_onMessageFromClientCallback)(String message);
 
+/**
+   @brief Callback function of client's connection and disconneciton events.
+*/
 class ServerCallbacks: public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) {
       //Serial.println("connected");
@@ -42,6 +47,9 @@ class ServerCallbacks: public BLEServerCallbacks {
     }
 };
 
+/**
+   @brief Callback function of sensor characteristic for on incoming messages.
+*/
 class CharacteristicCallbacks: public BLECharacteristicCallbacks {
     void onWrite(BLECharacteristic *pCharacteristic) {
       std::string rxValue = pCharacteristic->getValue();
@@ -99,31 +107,47 @@ void BluetoothService::init(
 
 void BluetoothService::setup() {
 
-  Serial.println("BluetoothService::setup()");
+  //Initialize ble device and its server.
+  //Bindings for server callback class
   BLEDevice::init(BluetoothService::deviceName.c_str());
   BLEServer *pServer = BLEDevice::createServer();
   pServer->setCallbacks(new ServerCallbacks());
 
+  //Initialize Battery service
   BLEService *batteryService = pServer->createService(BATTERY_SERVICE_UUID);
+
+  //Battery level characteristic
+  //Sends battery level percentage
   batteryService->addCharacteristic(&BatteryLevelCharacteristic);
   BatteryLevelDescriptor.setValue("Percentage 0 - 100");
   BatteryLevelCharacteristic.addDescriptor(&BatteryLevelDescriptor);
   BatteryLevelCharacteristic.addDescriptor(new BLE2902());
 
+  //Battery voltage characteristic
+  //Sends battery voltage information
   batteryService->addCharacteristic(&BatteryVoltageCharacteristic);
   BatteryVoltageDescriptor.setValue("Voltage 0 - 5 Volt");
   BatteryVoltageCharacteristic.addDescriptor(&BatteryVoltageDescriptor);
   BatteryVoltageCharacteristic.addDescriptor(new BLE2902());
 
 
+  //Device Info Service
   BLEService *deviceInfoService = pServer->createService(DEVICE_INFO_UUID);
+
+  //Characteristic of harware revision number
   deviceInfoService->addCharacteristic(&HardwareRevisionCharacteristic);
   HardwareRevisionCharacteristic.setValue(BluetoothService::HardwareRevision.c_str());
+
+  //Characteristic of firmware revision number
   deviceInfoService->addCharacteristic(&FirmwareRevisionCharacteristic);
   FirmwareRevisionCharacteristic.setValue(BluetoothService::FirmwareRevision.c_str());
+
+  //Characteristic of manufacturer name
   deviceInfoService->addCharacteristic(&ManufacturerNameCharacteristic);
   ManufacturerNameCharacteristic.setValue(BluetoothService::manufacturerName.c_str());
 
+  //Characteristic of usage counter. 
+  //It is responsible for sending information about how long the device has been on.
   deviceInfoService->addCharacteristic(&UsageCounterCharacteristic);
   UsageCounterDescriptor.setValue("Total usage time in minutes");
   UsageCounterCharacteristic.addDescriptor(&UsageCounterDescriptor);
@@ -133,6 +157,10 @@ void BluetoothService::setup() {
   String counterStr = (String)(counter / 2.000);
   UsageCounterCharacteristic.setValue(counterStr.c_str());
 
+  //Characteristic of device serial number
+  //We are using mac address as serial number
+  //The mac address given by esp32 and the scanned mac address do not match
+  //We use the mac address seen during scanning is done as the serial number.
   deviceInfoService->addCharacteristic(&SerialNumberCharacteristic);
   unsigned char mac_base[6] = {0, 0, 0, 0, 0, 0};
   esp_efuse_mac_get_default(mac_base);
@@ -143,20 +171,31 @@ void BluetoothService::setup() {
                         + String(mac_base[4], HEX)
                         + String(mac_base[5] + 2, HEX);
 
-  //  std::string str = String(mac_base[0], HEX);
   SerialNumberCharacteristic.setValue(std::string(serialNumber.c_str()));
 
+
+  //Sensor service
   BLEService *sensorService = pServer->createService(SENSOR_UUID);
+
+  //Sends 16 bit sensor value.
   sensorService->addCharacteristic(&SensorTXCharacteristic);
   SensorTXCharacteristic.setCallbacks(new CharacteristicCallbacks());
   SensorServiceTXDescriptor.setValue("mobile-to-esp");
   SensorTXCharacteristic.addDescriptor(&SensorServiceTXDescriptor);
 
+  //Reads the messages coming from client
   sensorService->addCharacteristic(&SensorRXCharacteristic);
   SensorServiceRXDescriptor.setValue("esp-to-mobile-magnetic field-0-4096");
   SensorRXCharacteristic.addDescriptor(&SensorServiceRXDescriptor);
+  SensorRXCharacteristic.addDescriptor(new BLE2902());
 
+  //Sends 8 bit button code information to client
+  sensorService->addCharacteristic(&ButtonCharacteristic);
+  ButtonDescriptor.setValue("push button notifications");
+  ButtonCharacteristic.addDescriptor(&ButtonDescriptor);
+  ButtonCharacteristic.addDescriptor(new BLE2902());
 
+  //Starts all services.
   deviceInfoService->start();
   batteryService->start();
   sensorService->start();
@@ -165,13 +204,13 @@ void BluetoothService::setup() {
   pAdvertising->addServiceUUID(BATTERY_SERVICE_UUID);
   pAdvertising->addServiceUUID(DEVICE_INFO_UUID);
 
-
-
   pServer->getAdvertising()->start();
-
-  Serial.println("Waiting a client connection to notify...");
 }
 
+/**
+   @brief Sends battery level percentage
+   @param [in] level - battery level percentage (8 bit)
+*/
 void BluetoothService::notifyBatteryLevel(uint8_t level) {
   if (millis() - BluetoothService::batteryDebounceTime > BluetoothService::batteryDebounceDelay) {
     BluetoothService::batteryDebounceTime = millis();
@@ -187,6 +226,10 @@ void BluetoothService::notifyBatteryLevel(uint8_t level) {
   }
 }
 
+/**
+   @brief Sends battery level voltage
+   @param [in] float voltage - battery voltage reading
+*/
 void BluetoothService::notifyBatteryVoltage(float voltage) {
   if (millis() - BluetoothService::batteryVoltageDebounceTime > BluetoothService::batteryVoltageDebounceDelay) {
     BluetoothService::batteryVoltageDebounceTime = millis();
@@ -204,10 +247,17 @@ void BluetoothService::notifyBatteryVoltage(float voltage) {
   }
 }
 
+/**
+   @brief Sets how often the battery level is sent
+   @param unsigned long dt - debounce time in ms.
+*/
 void BluetoothService::setBatteryLevelDebounceTime(unsigned long dt) {
   BluetoothService::batteryDebounceDelay = dt;
 }
 
+/**
+   @brief Update and stores device-on-time counter in every 30 seconds
+*/
 void BluetoothService::updateUsageCounter() {
   if (millis() - BluetoothService::counterTimerDebounceTime > BluetoothService::counterTimerDebounceDelay) {
     BluetoothService::counterTimerDebounceTime = millis();
@@ -234,10 +284,20 @@ void BluetoothService::onMessageFromClient(void (*onMessageFromClientCallback)(S
   _onMessageFromClientCallback = onMessageFromClientCallback;
 }
 
+/**
+   @brief Sends sensor readings.
+   @param uint16_t sensorValue - sensor analog reading. (0 to 65535)
+*/
+void BluetoothService::sendSensorValue(uint16_t sensorValue) {
+  SensorRXCharacteristic.setValue((uint16_t&)sensorValue);
+  SensorRXCharacteristic.notify();
+}
 
-
-
-
-
-
-
+/**
+   @brief Sends the button code when the buttons of the device are pressed.
+   @param uint8_t buttonCode (0-255)
+*/
+void BluetoothService::sendButtonCode(uint8_t buttonCode) {
+  ButtonCharacteristic.setValue(( uint8_t* )&buttonCode, 1);
+  ButtonCharacteristic.notify();
+}

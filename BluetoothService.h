@@ -43,6 +43,8 @@ class BluetoothService {
     void notifyBatteryVoltage(float voltage);
     void updateUsageCounter();
     void setBatteryLevelDebounceTime(unsigned long dt);
+    void sendSensorValue(uint16_t sensorValue);
+    void sendButtonCode(uint8_t buttonCode);
 
     void onDeviceConnectionChange(void (*onDeviceConnectionCallback)(String status));
     void onMessageFromClient(void (*onMessageFromClientCallback)(String message));
