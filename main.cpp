@@ -12,16 +12,16 @@ BluetoothService BS(
 
 void setup() {
   Serial.begin(115200);
-  //Allows the installation of the Ble server.
+  // Allows the installation of the Ble server.
   BS.setup();
 
-  //Sets how often the battery level is sent(ms). Low values can cause unnecessary resource consumption.
+  // Sets how often the battery level is sent(ms). Low values can cause unnecessary resource consumption.
   BS.setBatteryLevelDebounceTime(5000);
 
-  //Callback function that returns the client's connection status.
+  // Callback function that returns the client's connection status.
   BS.onDeviceConnectionChange(handleConnectionEvent);
 
-  //Callback function that returns messages from the client.
+  // Callback function that returns messages from the client.
   BS.onMessageFromClient(handleMessageEvent);
 }
 
